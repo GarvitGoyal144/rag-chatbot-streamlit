@@ -37,11 +37,30 @@ CHUNK_OVERLAP = 200 # Overlap between chunks
 @st.cache_resource
 def initialize_llm_and_embeddings():
     st.write("Initializing LLM and Embeddings (this happens once)...")
-    llm = OllamaLLM(model=OLLAMA_MODEL)
-    embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL)
-    return llm, embeddings
+
+    # --- START OF CHANGES ---
+    # Get OLLAMA_HOST from environment variable (Streamlit Secrets will provide this)
+    ollama_host_url = os.getenv("OLLAMA_HOST")
+    if not ollama_host_url:
+        st.error("OLLAMA_HOST environment variable not set. LLM and Embeddings will not work.")
+        # Return None for llm and embeddings if initialization fails
+        return None, None
+
+    # Initialize Ollama LLM and Embeddings, passing the ngrok URL as base_url
+    try:
+        llm = OllamaLLM(model=OLLAMA_MODEL, base_url=ollama_host_url, temperature=0.7)
+        embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=ollama_host_url)
+        return llm, embeddings
+    except Exception as e:
+        st.error(f"Error initializing Ollama: {e}. Check OLLAMA_HOST and if Ollama server is running with the correct models.")
+        return None, None
+    # --- END OF CHANGES ---
 
 llm, embeddings = initialize_llm_and_embeddings()
+
+# --- NEW: Check if LLM/Embeddings initialized successfully before proceeding with UI
+if llm is None or embeddings is None:
+    st.stop() # Stop the app if initialization failed to prevent further errors
 
 # --- 2. Set up the Web Search Tool (using SerpApi) ---
 @st.cache_resource
@@ -74,6 +93,11 @@ def retrieve_and_process_web_data(query: str):
     if not web_search_tool:
         st.warning("SerpAPI not initialized. Cannot perform web search.")
         return None
+    # --- NEW: Also check embeddings here ---
+    if not embeddings:
+        st.error("Embedding model not initialized. Cannot create vector store.")
+        return None
+    # --- END NEW ---
 
     st.info(f"Performing web search for: '{query}'")
     try:
